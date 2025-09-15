@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bloco de Notas Avançado — Export PDF corrigido</title>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<style>
+  body { padding-top: 70px; }
+  #editor { height: 300px; background: #fff; }
+  .note-history { max-height: 200px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#">Bloco de Notas Avançado</a>
+  </div>
+</nav>
+
+<div class="container mt-4">
+  <div class="mb-3">
+    <input type="text" id="noteTitle" class="form-control" placeholder="Título da Nota">
+  </div>
+
+  <div class="mb-3">
+    <div id="editor"></div>
+  </div>
+
+  <div class="mb-3">
+    <label><input type="checkbox" id="privateNote"> Nota Privada (com senha)</label>
+    <input type="password" id="notePassword" class="form-control mt-1" placeholder="Senha (opcional)" style="display:none;">
+  </div>
+
+  <div class="mb-3">
+    <button id="saveNote" class="btn btn-primary">Salvar Nota</button>
+    <button id="shareNote" class="btn btn-success">Gerar Link</button>
+    <button id="exportPdf" class="btn btn-info">Exportar PDF</button>
+  </div>
+
+  <h5>Histórico de Versões</h5>
+  <ul class="list-group note-history" id="noteHistory"></ul>
+</div>
+
+<!-- libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+
+<!-- html2canvas é necessário para doc.html() -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<!-- jsPDF UMD -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+/* === Editor Quill === */
+const quill = new Quill('#editor', { theme: 'snow' });
+
+/* === IndexedDB simples (mesmo que já tivesse) === */
+let db;
+const req = indexedDB.open("MyNotesDB", 1);
+req.onupgradeneeded = (e) => {
+  db = e.target.result;
+  if (!db.objectStoreNames.contains('notes')) {
+    db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+  }
+};
+req.onsuccess = (e) => { db = e.target.result; loadHistory(); };
+req.onerror = (e) => console.error('Erro IndexedDB', e);
+
+/* salvar nota */
+document.getElementById('saveNote').addEventListener('click', () => {
+  const title = document.getElementById('noteTitle').value || 'Sem título';
+  const content = quill.root.innerHTML;
+  const isPrivate = document.getElementById('privateNote').checked;
+  const password = document.getElementById('notePassword').value || null;
+
+  if (!content.trim()) { alert('A nota está vazia!'); return; }
+
+  const tx = db.transaction('notes','readwrite');
+  tx.objectStore('notes').add({ title, content, isPrivate, password, date: new Date().toISOString() });
+  tx.oncomplete = () => { alert('Nota salva'); loadHistory(); };
+  tx.onerror = (e) => { console.error('Erro ao salvar', e); alert('Erro ao salvar (veja console)'); };
+});
+
+/* toggle senha */
+document.getElementById('privateNote').addEventListener('change', (e) => {
+  document.getElementById('notePassword').style.display = e.target.checked ? 'block' : 'none';
+});
+
+/* carregar histórico */
+function loadHistory() {
+  const tx = db.transaction('notes','readonly');
+  const req = tx.objectStore('notes').getAll();
+  req.onsuccess = () => {
+    const notes = req.result || [];
+    const container = document.getElementById('noteHistory');
+    container.innerHTML = '';
+    notes.sort((a,b) => new Date(b.date) - new Date(a.date))
+         .forEach(n => {
+           const li = document.createElement('li');
+           li.className = 'list-group-item d-flex justify-content-between align-items-center';
+           li.innerHTML = `<div><strong>${escapeHtml(n.title)}</strong> <br><small>${new Date(n.date).toLocaleString()}</small></div>
+                           <div>
+                             <button class="btn btn-sm btn-link" onclick="loadNote(${n.id})">Carregar</button>
+                             <button class="btn btn-sm btn-link text-danger" onclick="deleteNote(${n.id})">Apagar</button>
+                           </div>`;
+           container.appendChild(li);
+         });
+  };
+}
+
+/* carregar nota */
+window.loadNote = function(id) {
+  const tx = db.transaction('notes','readonly');
+  tx.objectStore('notes').get(id).onsuccess = (e) => {
+    const note = e.target.result;
+    if (!note) { alert('Nota não encontrada'); return; }
+    if (note.isPrivate) {
+      const pass = prompt('Nota privada. Digite a senha:');
+      if (pass !== note.password) { alert('Senha incorreta'); return; }
+    }
+    document.getElementById('noteTitle').value = note.title;
+    quill.root.innerHTML = note.content;
+    document.getElementById('privateNote').checked = !!note.isPrivate;
+    document.getElementById('notePassword').value = note.password || '';
+    document.getElementById('notePassword').style.display = note.isPrivate ? 'block':'none';
+  };
+};
+
+/* apagar nota individual */
+window.deleteNote = function(id) {
+  if (!confirm("Tem certeza que deseja apagar esta nota?")) return;
+  const tx = db.transaction("notes","readwrite");
+  tx.objectStore("notes").delete(id).onsuccess = loadHistory;
+};
+
+/* compartilhar (simples codificando o HTML na URL) */
+document.getElementById('shareNote').addEventListener('click', () => {
+  const content = encodeURIComponent(quill.root.innerHTML);
+  const link = `${location.origin}${location.pathname}?note=${content}`;
+  prompt('Compartilhe este link:', link);
+});
+
+/* carregar nota via URL (se existir) */
+window.addEventListener('load', () => {
+  const p = new URLSearchParams(location.search);
+  if (p.has('note')) {
+    try { quill.root.innerHTML = decodeURIComponent(p.get('note')); } catch(e) { console.warn('Erro ao decodificar nota URL', e); }
+  }
+});
+
+/* fallback: texto simples -> PDF via doc.text */
+function exportPlainTextPdf(filename) {
+  const text = quill.getText();
+  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF ? window.jsPDF : null);
+  if (!JsPDF) { alert('jsPDF não encontrado para fallback'); return; }
+  const doc = new JsPDF({ unit: 'pt', format: 'a4' });
+  const margin = 40;
+  const maxWidth = doc.internal.pageSize.getWidth() - margin*2;
+  const lineHeight = 12;
+  let y = 40;
+  const lines = doc.splitTextToSize(text, maxWidth);
+  lines.forEach(line => {
+    if (y > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = 40; }
+    doc.text(line, margin, y);
+    y += lineHeight;
+  });
+  doc.save(filename);
+}
+
+/* Exportar PDF robusto (tenta doc.html() e faz fallback para texto) */
+document.getElementById('exportPdf').addEventListener('click', async () => {
+  const filename = (document.getElementById('noteTitle').value || 'nota') + '.pdf';
+
+  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF ? window.jsPDF : null);
+  if (!JsPDF) { alert('jsPDF não foi carregado. Verifique se o script do jsPDF está incluído.'); return; }
+
+  const temp = document.createElement('div');
+  temp.style.padding = '10px';
+  temp.style.background = '#fff';
+  const computed = window.getComputedStyle(quill.root);
+  temp.style.fontFamily = computed.fontFamily || 'Arial, sans-serif';
+  temp.style.fontSize = computed.fontSize || '12px';
+
+  const h = document.createElement('h2');
+  h.textContent = document.getElementById('noteTitle').value || '';
+  h.style.margin = '0 0 10px 0';
+  const contentDiv = document.createElement('div');
+  contentDiv.innerHTML = quill.root.innerHTML;
+  contentDiv.querySelectorAll('.ql-clipboard, .ql-tooltip').forEach(n => n.remove());
+
+  temp.appendChild(h);
+  temp.appendChild(contentDiv);
+
+  try {
+    const doc = new JsPDF({ unit: 'pt', format: 'a4' });
+    await doc.html(temp, {
+      callback: (docResult) => { docResult.save(filename); },
+      x: 20,
+      y: 20,
+      html2canvas: { scale: 1, useCORS: true, allowTaint: true },
+      windowWidth: temp.scrollWidth || document.documentElement.scrollWidth
+    });
+    return;
+  } catch (err) {
+    console.error('Erro ao gerar PDF via doc.html():', err);
+    alert('Erro ao gerar PDF via render HTML. Será feito fallback para PDF de texto simples.');
+    exportPlainTextPdf(filename);
+  }
+});
+
+/* util */
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+</script>
+</body>
+</html>
