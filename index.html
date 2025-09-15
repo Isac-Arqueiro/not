@@ -1,257 +1,152 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
- <style>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Bloco de Notas Avançado — Export PDF corrigido</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
-<link rel="apple-touch-icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
-<meta name="theme-color" content="#1e90ff">
- <meta charset="UTF-8" />
- <meta name="viewport" content="width=device-width, initial-scale=1" />
- <title>Player</title>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
-<style>
-  body { padding-top: 70px; }
-  #editor { height: 300px; background: #fff; }
-  .note-history { max-height: 200px; overflow-y: auto; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bloco de Notas Avançado</title>
+
+  <!-- Manifesto PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
+  <link rel="apple-touch-icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
+  <meta name="theme-color" content="#1e90ff">
+
+  <!-- Estilos -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+
+  <style>
+    body { padding-top: 70px; background: #f4f4f9; }
+    #editor { height: 300px; background: #fff; }
+    .note-history { max-height: 200px; overflow-y: auto; }
+  </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="#">Bloco de Notas Avançado</a>
-  </div>
-</nav>
+  <!-- Navbar -->
+  <nav class="navbar navbar-dark bg-primary fixed-top">
+    <div class="container-fluid">
+      <span class="navbar-brand">📝 Bloco de Notas</span>
+    </div>
+  </nav>
 
-<div class="container mt-4">
-  <div class="mb-3">
-    <input type="text" id="noteTitle" class="form-control" placeholder="Título da Nota">
-  </div>
+  <div class="container mt-4">
+    <!-- Título -->
+    <input type="text" id="noteTitle" class="form-control mb-2" placeholder="Título da nota">
 
-  <div class="mb-3">
+    <!-- Editor -->
     <div id="editor"></div>
+
+    <!-- Botões -->
+    <div class="mt-3">
+      <button id="saveNote" class="btn btn-success">Salvar</button>
+      <button id="exportPdf" class="btn btn-danger">Exportar PDF</button>
+      <button id="deleteAll" class="btn btn-warning">Apagar Todas</button>
+    </div>
+
+    <!-- Histórico -->
+    <h5 class="mt-4">Histórico de Notas</h5>
+    <ul id="noteHistory" class="list-group note-history"></ul>
   </div>
 
-  <div class="mb-3">
-    <label><input type="checkbox" id="privateNote"> Nota Privada (com senha)</label>
-    <input type="password" id="notePassword" class="form-control mt-1" placeholder="Senha (opcional)" style="display:none;">
-  </div>
+  <!-- Scripts -->
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <div class="mb-3">
-    <button id="saveNote" class="btn btn-primary">Salvar Nota</button>
-    <button id="shareNote" class="btn btn-success">Gerar Link</button>
-    <button id="exportPdf" class="btn btn-info">Exportar PDF</button>
-  </div>
+  <script>
+    // Inicializa editor
+    const quill = new Quill('#editor', { theme: 'snow' });
 
-  <h5>Histórico de Versões</h5>
-  <ul class="list-group note-history" id="noteHistory"></ul>
-</div>
+    let db;
+    const request = indexedDB.open("notesDB", 1);
+    request.onupgradeneeded = e => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("notes")) {
+        db.createObjectStore("notes", { keyPath: "id", autoIncrement: true });
+      }
+    };
+    request.onsuccess = e => { db = e.target.result; loadHistory(); };
 
-<!-- libs -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+    // Salvar
+    document.getElementById('saveNote').addEventListener('click', () => {
+      const title = document.getElementById('noteTitle').value.trim();
+      const content = quill.root.innerHTML;
+      if (!title) { alert("Digite um título"); return; }
 
-<!-- html2canvas é necessário para doc.html() -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-<!-- jsPDF UMD -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-<script>
-/* === Editor Quill === */
-const quill = new Quill('#editor', { theme: 'snow' });
-
-/* === IndexedDB simples (mesmo que já tivesse) === */
-let db;
-const req = indexedDB.open("MyNotesDB", 1);
-req.onupgradeneeded = (e) => {
-  db = e.target.result;
-  if (!db.objectStoreNames.contains('notes')) {
-    db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
-  }
-};
-req.onsuccess = (e) => { db = e.target.result; loadHistory(); };
-req.onerror = (e) => console.error('Erro IndexedDB', e);
-
-/* salvar nota */
-document.getElementById('saveNote').addEventListener('click', () => {
-  const title = document.getElementById('noteTitle').value || 'Sem título';
-  const content = quill.root.innerHTML;
-  const isPrivate = document.getElementById('privateNote').checked;
-  const password = document.getElementById('notePassword').value || null;
-
-  if (!content.trim()) { alert('A nota está vazia!'); return; }
-
-  const tx = db.transaction('notes','readwrite');
-  tx.objectStore('notes').add({ title, content, isPrivate, password, date: new Date().toISOString() });
-  tx.oncomplete = () => { alert('Nota salva'); loadHistory(); };
-  tx.onerror = (e) => { console.error('Erro ao salvar', e); alert('Erro ao salvar (veja console)'); };
-});
-
-/* toggle senha */
-document.getElementById('privateNote').addEventListener('change', (e) => {
-  document.getElementById('notePassword').style.display = e.target.checked ? 'block' : 'none';
-});
-
-/* carregar histórico */
-function loadHistory() {
-  const tx = db.transaction('notes','readonly');
-  const req = tx.objectStore('notes').getAll();
-  req.onsuccess = () => {
-    const notes = req.result || [];
-    const container = document.getElementById('noteHistory');
-    container.innerHTML = '';
-    notes.sort((a,b) => new Date(b.date) - new Date(a.date))
-         .forEach(n => {
-           const li = document.createElement('li');
-           li.className = 'list-group-item d-flex justify-content-between align-items-center';
-           li.innerHTML = `<div><strong>${escapeHtml(n.title)}</strong> <br><small>${new Date(n.date).toLocaleString()}</small></div>
-                           <div>
-                             <button class="btn btn-sm btn-link" onclick="loadNote(${n.id})">Carregar</button>
-                             <button class="btn btn-sm btn-link text-danger" onclick="deleteNote(${n.id})">Apagar</button>
-                           </div>`;
-           container.appendChild(li);
-         });
-  };
-}
-
-/* carregar nota */
-window.loadNote = function(id) {
-  const tx = db.transaction('notes','readonly');
-  tx.objectStore('notes').get(id).onsuccess = (e) => {
-    const note = e.target.result;
-    if (!note) { alert('Nota não encontrada'); return; }
-    if (note.isPrivate) {
-      const pass = prompt('Nota privada. Digite a senha:');
-      if (pass !== note.password) { alert('Senha incorreta'); return; }
-    }
-    document.getElementById('noteTitle').value = note.title;
-    quill.root.innerHTML = note.content;
-    document.getElementById('privateNote').checked = !!note.isPrivate;
-    document.getElementById('notePassword').value = note.password || '';
-    document.getElementById('notePassword').style.display = note.isPrivate ? 'block':'none';
-  };
-};
-
-/* apagar nota individual */
-window.deleteNote = function(id) {
-  if (!confirm("Tem certeza que deseja apagar esta nota?")) return;
-  const tx = db.transaction("notes","readwrite");
-  tx.objectStore("notes").delete(id).onsuccess = loadHistory;
-};
-
-/* compartilhar (simples codificando o HTML na URL) */
-document.getElementById('shareNote').addEventListener('click', () => {
-  const content = encodeURIComponent(quill.root.innerHTML);
-  const link = `${location.origin}${location.pathname}?note=${content}`;
-  prompt('Compartilhe este link:', link);
-});
-
-/* carregar nota via URL (se existir) */
-window.addEventListener('load', () => {
-  const p = new URLSearchParams(location.search);
-  if (p.has('note')) {
-    try { quill.root.innerHTML = decodeURIComponent(p.get('note')); } catch(e) { console.warn('Erro ao decodificar nota URL', e); }
-  }
-});
-
-/* fallback: texto simples -> PDF via doc.text */
-function exportPlainTextPdf(filename) {
-  const text = quill.getText();
-  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF ? window.jsPDF : null);
-  if (!JsPDF) { alert('jsPDF não encontrado para fallback'); return; }
-  const doc = new JsPDF({ unit: 'pt', format: 'a4' });
-  const margin = 40;
-  const maxWidth = doc.internal.pageSize.getWidth() - margin*2;
-  const lineHeight = 12;
-  let y = 40;
-  const lines = doc.splitTextToSize(text, maxWidth);
-  lines.forEach(line => {
-    if (y > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = 40; }
-    doc.text(line, margin, y);
-    y += lineHeight;
-  });
-  doc.save(filename);
-}
-
-/* Exportar PDF robusto (tenta doc.html() e faz fallback para texto) */
-document.getElementById('exportPdf').addEventListener('click', async () => {
-  const filename = (document.getElementById('noteTitle').value || 'nota') + '.pdf';
-
-  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF ? window.jsPDF : null);
-  if (!JsPDF) { alert('jsPDF não foi carregado. Verifique se o script do jsPDF está incluído.'); return; }
-
-  const temp = document.createElement('div');
-  temp.style.padding = '10px';
-  temp.style.background = '#fff';
-  const computed = window.getComputedStyle(quill.root);
-  temp.style.fontFamily = computed.fontFamily || 'Arial, sans-serif';
-  temp.style.fontSize = computed.fontSize || '12px';
-
-  const h = document.createElement('h2');
-  h.textContent = document.getElementById('noteTitle').value || '';
-  h.style.margin = '0 0 10px 0';
-  const contentDiv = document.createElement('div');
-  contentDiv.innerHTML = quill.root.innerHTML;
-  contentDiv.querySelectorAll('.ql-clipboard, .ql-tooltip').forEach(n => n.remove());
-
-  temp.appendChild(h);
-  temp.appendChild(contentDiv);
-
-  try {
-    const doc = new JsPDF({ unit: 'pt', format: 'a4' });
-    await doc.html(temp, {
-      callback: (docResult) => { docResult.save(filename); },
-      x: 20,
-      y: 20,
-      html2canvas: { scale: 1, useCORS: true, allowTaint: true },
-      windowWidth: temp.scrollWidth || document.documentElement.scrollWidth
+      const tx = db.transaction("notes","readwrite");
+      tx.objectStore("notes").add({ title, content, date: new Date() });
+      tx.oncomplete = () => { loadHistory(); alert("Nota salva!"); };
     });
-    return;
-  } catch (err) {
-    console.error('Erro ao gerar PDF via doc.html():', err);
-    alert('Erro ao gerar PDF via render HTML. Será feito fallback para PDF de texto simples.');
-    exportPlainTextPdf(filename);
-  }
-});
 
-/* util */
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
-</script>
-  <button id="btnInstall" style="display:none;">📲 Instalar App</button>
-<script>
-let deferredPrompt;
-const btnInstall = document.getElementById("btnInstall");
+    // Carregar histórico
+    function loadHistory() {
+      const tx = db.transaction("notes","readonly");
+      const req = tx.objectStore("notes").getAll();
+      req.onsuccess = () => {
+        const notes = req.result || [];
+        const container = document.getElementById("noteHistory");
+        container.innerHTML = "";
+        notes.sort((a,b) => new Date(b.date) - new Date(a.date))
+             .forEach(n => {
+          const li = document.createElement("li");
+          li.className = "list-group-item d-flex justify-content-between align-items-center";
+          li.innerHTML = `
+            <div>
+              <strong>${n.title}</strong><br>
+              <small>${new Date(n.date).toLocaleString()}</small>
+            </div>
+            <div>
+              <button class="btn btn-sm btn-link" onclick="loadNote(${n.id})">Carregar</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteNote(${n.id})">Apagar</button>
+            </div>`;
+          container.appendChild(li);
+        });
+      };
+    }
 
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  btnInstall.style.display = "block";
-});
+    // Carregar nota
+    window.loadNote = function(id) {
+      const tx = db.transaction("notes","readonly");
+      tx.objectStore("notes").get(id).onsuccess = e => {
+        const note = e.target.result;
+        if (note) {
+          document.getElementById("noteTitle").value = note.title;
+          quill.root.innerHTML = note.content;
+        }
+      };
+    };
 
-btnInstall.addEventListener("click", async () => {
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log("Resultado da instalação:", outcome);
-    deferredPrompt = null;
-    btnInstall.style.display = "none";
-  }
-});
+    // Apagar nota
+    window.deleteNote = function(id) {
+      if (!confirm("Apagar esta nota?")) return;
+      const tx = db.transaction("notes","readwrite");
+      tx.objectStore("notes").delete(id).onsuccess = () => { loadHistory(); };
+    };
 
-// Registrar Service Worker
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js")
-    .then(() => console.log("SW registrado"))
-    .catch(err => console.error("Erro SW:", err));
-}
-</script>
+    // Apagar todas
+    document.getElementById("deleteAll").addEventListener("click", () => {
+      if (!confirm("Apagar TODAS as notas?")) return;
+      const tx = db.transaction("notes","readwrite");
+      tx.objectStore("notes").clear().onsuccess = () => { loadHistory(); };
+    });
+
+    // Exportar PDF
+    document.getElementById("exportPdf").addEventListener("click", async () => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const editorContent = document.getElementById("editor");
+
+      await doc.html(editorContent, {
+        callback: (doc) => {
+          doc.save((document.getElementById("noteTitle").value || "nota") + ".pdf");
+        },
+        x: 10, y: 10, width: 190
+      });
+    });
+
+    // Service Worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js");
+    }
+  </script>
 </body>
 </html>
