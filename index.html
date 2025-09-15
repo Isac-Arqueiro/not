@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bloco de Notas Avançado</title>
 
-  <!-- Manifesto PWA -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
   <link rel="apple-touch-icon" href="https://img.freepik.com/vetores-premium/icone-de-caneta-e-bloco-de-notas-vermelho-ilustracao_149267-907.jpg">
   <meta name="theme-color" content="#1e90ff">
 
-  <!-- Estilos -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
 
@@ -22,7 +20,6 @@
   </style>
 </head>
 <body>
-  <!-- Navbar -->
   <nav class="navbar navbar-dark bg-primary fixed-top">
     <div class="container-fluid">
       <span class="navbar-brand">📝 Bloco de Notas</span>
@@ -30,32 +27,25 @@
   </nav>
 
   <div class="container mt-4">
-    <!-- Título -->
     <input type="text" id="noteTitle" class="form-control mb-2" placeholder="Título da nota">
-
-    <!-- Editor -->
     <div id="editor"></div>
 
-    <!-- Botões -->
     <div class="mt-3">
       <button id="saveNote" class="btn btn-success">Salvar</button>
       <button id="exportPdf" class="btn btn-danger">Exportar PDF</button>
       <button id="deleteAll" class="btn btn-warning">Apagar Todas</button>
     </div>
 
-    <!-- Histórico -->
     <h5 class="mt-4">Histórico de Notas</h5>
-    <!-- Campo de busca -->
     <input type="text" id="searchNotes" class="form-control mb-2" placeholder="🔍 Buscar no histórico...">
     <ul id="noteHistory" class="list-group note-history"></ul>
   </div>
 
-  <!-- Scripts -->
   <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <script>
-    // Inicializa editor
     const quill = new Quill('#editor', { theme: 'snow' });
 
     let db;
@@ -68,7 +58,6 @@
     };
     request.onsuccess = e => { db = e.target.result; loadHistory(); };
 
-    // Salvar
     document.getElementById('saveNote').addEventListener('click', () => {
       const title = document.getElementById('noteTitle').value.trim();
       const content = quill.root.innerHTML;
@@ -79,7 +68,6 @@
       tx.oncomplete = () => { loadHistory(); alert("Nota salva!"); };
     });
 
-    // Carregar histórico
     function loadHistory() {
       const tx = db.transaction("notes","readonly");
       const req = tx.objectStore("notes").getAll();
@@ -87,7 +75,6 @@
         const notes = req.result || [];
         const container = document.getElementById("noteHistory");
         container.innerHTML = "";
-
         const searchTerm = (document.getElementById("searchNotes").value || "").toLowerCase();
 
         notes
@@ -110,7 +97,6 @@
       };
     }
 
-    // Carregar nota
     window.loadNote = function(id) {
       const tx = db.transaction("notes","readonly");
       tx.objectStore("notes").get(id).onsuccess = e => {
@@ -122,38 +108,61 @@
       };
     };
 
-    // Apagar nota
     window.deleteNote = function(id) {
       if (!confirm("Apagar esta nota?")) return;
       const tx = db.transaction("notes","readwrite");
       tx.objectStore("notes").delete(id).onsuccess = () => { loadHistory(); };
     };
 
-    // Apagar todas
     document.getElementById("deleteAll").addEventListener("click", () => {
       if (!confirm("Apagar TODAS as notas?")) return;
       const tx = db.transaction("notes","readwrite");
-      tx.objectStore("notes").clear().onsuccess = () => { loadHistory(); };
+      const store = tx.objectStore("notes");
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        req.result.forEach(key => store.delete(key));
+      };
+      tx.oncomplete = () => { loadHistory(); };
     });
 
-    // Exportar PDF
+    // PDF robusto: título + conteúdo Quill com estilo
     document.getElementById("exportPdf").addEventListener("click", async () => {
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      const editorContent = document.getElementById("editor");
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-      await doc.html(editorContent, {
-        callback: (doc) => {
+      // Criar container temporário para capturar HTML com estilo
+      const temp = document.createElement("div");
+      temp.style.background = "#fff";
+      temp.style.padding = "10px";
+      temp.style.width = "800px"; // aumenta resolução
+
+      // Adicionar título
+      const h = document.createElement("h2");
+      h.textContent = document.getElementById("noteTitle").value || "";
+      temp.appendChild(h);
+
+      // Adicionar conteúdo Quill
+      const contentDiv = document.createElement("div");
+      contentDiv.innerHTML = quill.root.innerHTML;
+      temp.appendChild(contentDiv);
+
+      // Remover elementos indesejados do Quill
+      contentDiv.querySelectorAll(".ql-clipboard, .ql-tooltip").forEach(el => el.remove());
+
+      // Usar html2canvas via doc.html()
+      await doc.html(temp, {
+        callback: function(doc) {
           doc.save((document.getElementById("noteTitle").value || "nota") + ".pdf");
         },
-        x: 10, y: 10, width: 190
+        x: 20,
+        y: 20,
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+        windowWidth: temp.scrollWidth
       });
     });
 
-    // Busca em tempo real
     document.getElementById("searchNotes").addEventListener("input", loadHistory);
 
-    // Service Worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js");
     }
