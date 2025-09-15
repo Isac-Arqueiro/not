@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
+  <link rel="manifest" href="manifest.json">
+<link rel="icon" href="https://thumbs.dreamstime.com/z/bloco-de-notas-com-anota%C3%A7%C3%B5es-para-texto-e-l%C3%A1pis-vermelho-%C3%ADcone-vetor-pesquisa-lista-um-vetorial-ilustra%C3%A7%C3%A3o-em-papel-marca-196476142.jpg">
+<link rel="apple-touch-icon" href="https://thumbs.dreamstime.com/z/bloco-de-notas-com-anota%C3%A7%C3%B5es-para-texto-e-l%C3%A1pis-vermelho-%C3%ADcone-vetor-pesquisa-lista-um-vetorial-ilustra%C3%A7%C3%A3o-em-papel-marca-196476142.jpg">
+<meta name="theme-color" content="#1e90ff">
+ <meta charset="UTF-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Player</title>
+ <style>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Bloco de Notas Avançado — Export PDF corrigido</title>
@@ -218,5 +226,34 @@ function escapeHtml(str) {
   return str.replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 </script>
+  <button id="btnInstall" style="display:none;">📲 Instalar App</button>
+<script>
+let deferredPrompt;
+const btnInstall = document.getElementById("btnInstall");
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  btnInstall.style.display = "block";
+});
+
+btnInstall.addEventListener("click", async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log("Resultado da instalação:", outcome);
+    deferredPrompt = null;
+    btnInstall.style.display = "none";
+  }
+});
+
+// Registrar Service Worker
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js")
+    .then(() => console.log("SW registrado"))
+    .catch(err => console.error("Erro SW:", err));
+}
+</script>
+
 </body>
 </html>
